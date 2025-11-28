@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         CodeRabbit Review Extractor (Debug Version)
+// @name         CodeRabbit Review Extractor
 // @namespace    http://tampermonkey.net/
 // @version      0.2.1
 // @description  Extracts and summarizes CodeRabbit reviews from GitHub PRs into a beautiful, modern popup.
