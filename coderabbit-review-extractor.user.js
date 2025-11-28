@@ -202,6 +202,10 @@
             const categoryMatch = fullText.match(categoryRegex);
             components.category = categoryMatch ? categoryMatch[1].trim() : 'General';
 
+            // Determine if this is a nitpick based on category
+            const isNitpick = components.category.toLowerCase().includes('nitpick') || 
+                              components.category.includes('🧹');
+
             // 6. Extract Review Text (everything remaining after removing extracted parts)
             // Re-get the text after removals
             let reviewText = bodyClone.textContent.trim();
@@ -212,7 +216,7 @@
             components.reviewText = reviewText;
 
             const reviewData = {
-                type: 'main',
+                type: isNitpick ? 'nitpick' : 'main',
                 components: components,
                 hasPrompt: !!components.aiPrompt,
                 hasCommittable: !!components.committableSuggestion,
@@ -225,74 +229,6 @@
             console.debug(getPrefix(), 'Parsed components:', components);
         });
         console.log(getPrefix(), '--- Finished processing main review threads ---');
-
-        // 2. Nitpick Reviews (in the main review summary)
-        console.log(getPrefix(), 'Step 2: Searching for Nitpick summary section...');
-        
-        // Find nitpick summary by checking summary text content
-        let nitpickSummary = null;
-        const allSummaries = document.querySelectorAll('details summary');
-        for (const summary of allSummaries) {
-            const text = summary.textContent.trim();
-            if (text.includes('Nitpick comments') || text.includes('🧹 Nitpick')) {
-                nitpickSummary = summary;
-                break;
-            }
-        }
-
-        if (nitpickSummary) {
-            console.log(getPrefix(), 'Found Nitpick summary element.');
-            console.debug(getPrefix(), 'Nitpick Summary Element:', nitpickSummary);
-            const nitpickDetailsContainer = nitpickSummary.closest('details');
-            if (!nitpickDetailsContainer) {
-                 console.log(getPrefix(), 'Could not find parent <details> for nitpick summary. Aborting nitpick search.');
-                 return reviews;
-            }
-            console.log(getPrefix(), 'Found parent <details> container for nitpicks.');
-            const nitpickFileBlocks = nitpickDetailsContainer.querySelectorAll(':scope > blockquote');
-            console.log(getPrefix(), `Found ${nitpickFileBlocks.length} potential nitpick file blocks.`);
-
-            nitpickFileBlocks.forEach((fileBlock, index) => {
-                console.log(getPrefix(), `Processing nitpick block ${index + 1}/${nitpickFileBlocks.length}.`);
-                console.debug(getPrefix(), 'Nitpick Block Element:', fileBlock);
-                const filePathSummary = fileBlock.querySelector('details > summary');
-                const commentBlock = fileBlock.querySelector('details > blockquote');
-
-                if (filePathSummary && commentBlock) {
-                    const filePath = filePathSummary.textContent.trim();
-                    const fullText = commentBlock.textContent.trim();
-                    console.log(getPrefix(), `Extracted nitpick for file: ${filePath}`);
-
-                    if (fullText) {
-                         const nitpickData = {
-                            type: 'nitpick',
-                            components: {
-                                category: 'Nitpick',
-                                reviewText: `File: ${filePath}\n\n${fullText}`,
-                                codeDiff: null,
-                                committableSuggestion: null,
-                                aiPrompt: null,
-                                tools: null,
-                            },
-                            hasPrompt: false,
-                            hasCommittable: false,
-                            hasCodeDiff: false,
-                            hasTools: false,
-                            element: fileBlock,
-                        };
-                        reviews.push(nitpickData);
-                        console.log(getPrefix(), `Successfully parsed a 'nitpick' review.`);
-                        console.debug(getPrefix(), 'Parsed object:', nitpickData);
-                    } else {
-                         console.log(getPrefix(), 'Nitpick comment block was empty. Skipping.');
-                    }
-                } else {
-                    console.log(getPrefix(), `Could not find required summary/blockquote structure in nitpick block ${index + 1}. Skipping.`);
-                }
-            });
-        } else {
-            console.log(getPrefix(), 'No Nitpick summary section found on the page.');
-        }
 
         console.log(getPrefix(), `--- PARSE END --- Found ${reviews.length} total review items.`);
         console.debug(getPrefix(), 'Final parsed data:', reviews);
