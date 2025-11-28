@@ -582,8 +582,9 @@
 
     // --- DATA EXTRACTION ---
     
-    // Pre-compiled regex for category extraction (Unicode flag for proper emoji handling)
-    const CATEGORY_REGEX = /^([🛠️⚠️💡🧹📜][^\n]*)/u;
+    // Pre-compiled regex for category extraction
+    // Uses alternation instead of character class to properly handle emoji with variation selectors
+    const CATEGORY_REGEX = /^((?:🛠️|⚠️|💡|🧹|📜)[^\n]*)/u;
     
     // Summary text patterns for quick matching
     const PATTERN_AI_PROMPT = ['Prompt for AI Agents', '🤖 Prompt'];
