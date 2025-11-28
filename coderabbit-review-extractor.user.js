@@ -3,7 +3,7 @@
 // @namespace    http://tampermonkey.net/
 // @version      0.2.1
 // @description  Extracts and summarizes CodeRabbit reviews from GitHub PRs into a beautiful, modern popup.
-// @author       Your Name
+// @author       Invictus Navarchus
 // @match        https://github.com/*/*/pull/*
 // @grant        GM_addStyle
 // @grant        GM_setClipboard
