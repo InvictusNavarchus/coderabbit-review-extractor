@@ -580,165 +580,238 @@
     }
 
     // --- DATA EXTRACTION ---
+    
+    // Pre-compiled regex for category extraction (avoid recreating on each call)
+    const CATEGORY_REGEX = /^([🛠️⚠️💡🧹📜][^\n]*)/;
+    
+    // Summary text patterns for quick matching
+    const PATTERN_AI_PROMPT = ['Prompt for AI Agents', '🤖 Prompt'];
+    const PATTERN_TOOLS = ['Tools', '🧰 Tools'];
+    const PATTERN_COMMITTABLE = ['Committable suggestion', '📝 Committable'];
+    
+    /**
+     * Check if summary text matches any of the patterns
+     * @param {string} summaryText 
+     * @param {string[]} patterns 
+     * @returns {boolean}
+     */
+    function matchesPattern(summaryText, patterns) {
+        for (let i = 0; i < patterns.length; i++) {
+            if (summaryText.includes(patterns[i])) return true;
+        }
+        return false;
+    }
+    
+    /**
+     * Extract tools content from a details element without cloning
+     * @param {Element} details 
+     * @param {string} summaryText 
+     * @returns {string|null}
+     */
+    function extractToolsContent(details, summaryText) {
+        const innerDetails = details.querySelectorAll('details');
+        if (innerDetails.length === 0) {
+            // Fallback: just get text content minus summary
+            return details.textContent.replace(summaryText, '').trim() || null;
+        }
+        
+        const toolsContent = [];
+        for (const inner of innerDetails) {
+            const innerSummary = inner.querySelector('summary');
+            if (!innerSummary) continue;
+            
+            const toolName = innerSummary.textContent.trim();
+            const paragraphs = inner.querySelectorAll('p');
+            
+            if (paragraphs.length > 0) {
+                const toolInfo = [];
+                for (const p of paragraphs) {
+                    toolInfo.push(p.textContent.trim());
+                }
+                toolsContent.push(`${toolName}:\n${toolInfo.join('\n')}`);
+            } else {
+                toolsContent.push(toolName);
+            }
+        }
+        
+        return toolsContent.length > 0 ? toolsContent.join('\n\n') : null;
+    }
+    
+    /**
+     * Extract committable suggestion from a details element
+     * @param {Element} details 
+     * @returns {string|null}
+     */
+    function extractCommittableSuggestion(details) {
+        const diffTable = details.querySelector('.js-suggested-changes-blob table');
+        if (!diffTable) return null;
+        
+        const rows = diffTable.querySelectorAll('tr');
+        const lines = [];
+        
+        for (const row of rows) {
+            const cell = row.querySelector('.blob-code-inner');
+            if (!cell) continue;
+            
+            // Use classList.contains for faster class checking
+            let marker = ' ';
+            if (row.querySelector('.blob-code-marker-addition')) {
+                marker = '+';
+            } else if (row.querySelector('.blob-code-marker-deletion')) {
+                marker = '-';
+            }
+            lines.push(marker + cell.textContent);
+        }
+        
+        return lines.length > 0 ? lines.join('\n') : null;
+    }
+    
+    /**
+     * Parse a single comment body without cloning the DOM
+     * @param {Element} commentBody 
+     * @returns {Object} components
+     */
+    function parseCommentBody(commentBody) {
+        const components = {
+            category: null,
+            reviewText: null,
+            codeDiff: null,
+            committableSuggestion: null,
+            aiPrompt: null,
+            tools: null,
+        };
+        
+        // Track which details elements we've processed (by their content type)
+        const processedTypes = new Set();
+        
+        // Single pass through all details elements
+        const allDetails = commentBody.querySelectorAll('details');
+        for (const details of allDetails) {
+            const summary = details.querySelector('summary');
+            if (!summary) continue;
+            
+            const summaryText = summary.textContent.trim();
+            
+            // Check AI Prompt
+            if (!processedTypes.has('aiPrompt') && matchesPattern(summaryText, PATTERN_AI_PROMPT)) {
+                const codeEl = details.querySelector('pre code, code');
+                components.aiPrompt = codeEl?.textContent.trim() || null;
+                processedTypes.add('aiPrompt');
+                continue;
+            }
+            
+            // Check Tools
+            if (!processedTypes.has('tools') && matchesPattern(summaryText, PATTERN_TOOLS)) {
+                components.tools = extractToolsContent(details, summaryText);
+                processedTypes.add('tools');
+                continue;
+            }
+            
+            // Check Committable Suggestion
+            if (!processedTypes.has('committable') && matchesPattern(summaryText, PATTERN_COMMITTABLE)) {
+                components.committableSuggestion = extractCommittableSuggestion(details);
+                processedTypes.add('committable');
+                continue;
+            }
+        }
+        
+        // Extract Code Diff
+        const codeDiffBlock = commentBody.querySelector('.highlight-source-diff');
+        if (codeDiffBlock) {
+            components.codeDiff = codeDiffBlock.textContent.trim();
+        }
+        
+        // Get full text content for category and review text extraction
+        // We need to build the "clean" review text by excluding certain sections
+        const fullText = commentBody.textContent.trim();
+        
+        // Extract Category (first line with emoji)
+        const categoryMatch = fullText.match(CATEGORY_REGEX);
+        components.category = categoryMatch ? categoryMatch[1].trim() : 'General';
+        
+        // For review text, we need a smarter approach:
+        // Get direct text content excluding details, code blocks we've already extracted
+        let reviewText = '';
+        
+        // Walk through direct children and collect text, skipping extracted sections
+        const walker = document.createTreeWalker(
+            commentBody,
+            NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
+            {
+                acceptNode: (node) => {
+                    // Skip details elements (they contain AI prompt, tools, committable)
+                    if (node.nodeType === Node.ELEMENT_NODE) {
+                        if (node.tagName === 'DETAILS') return NodeFilter.FILTER_REJECT;
+                        if (node.classList?.contains('highlight-source-diff')) return NodeFilter.FILTER_REJECT;
+                        if (node.closest?.('details')) return NodeFilter.FILTER_REJECT;
+                        if (node.closest?.('.highlight-source-diff')) return NodeFilter.FILTER_REJECT;
+                    }
+                    if (node.nodeType === Node.TEXT_NODE) {
+                        if (node.parentElement?.closest?.('details')) return NodeFilter.FILTER_REJECT;
+                        if (node.parentElement?.closest?.('.highlight-source-diff')) return NodeFilter.FILTER_REJECT;
+                        return NodeFilter.FILTER_ACCEPT;
+                    }
+                    return NodeFilter.FILTER_SKIP;
+                }
+            }
+        );
+        
+        const textParts = [];
+        let currentNode;
+        while ((currentNode = walker.nextNode())) {
+            if (currentNode.nodeType === Node.TEXT_NODE) {
+                const text = currentNode.textContent;
+                if (text.trim()) {
+                    textParts.push(text);
+                }
+            }
+        }
+        
+        reviewText = textParts.join('').trim();
+        
+        // Remove the category line from the beginning
+        if (categoryMatch && reviewText.startsWith(categoryMatch[1])) {
+            reviewText = reviewText.substring(categoryMatch[1].length).trim();
+        }
+        
+        components.reviewText = reviewText;
+        
+        return components;
+    }
+    
     function parseReviews() {
-        console.log(getPrefix(), '--- PARSE START ---');
         const reviews = [];
 
-        // 1. Main Actionable Reviews (in review threads)
-        console.log(getPrefix(), 'Step 1: Searching for main review threads with selector: .review-thread-component');
+        // Use a more specific selector if possible to reduce initial set
         const reviewThreads = document.querySelectorAll('.review-thread-component');
-        console.log(getPrefix(), `Found ${reviewThreads.length} potential review threads.`);
-
-        reviewThreads.forEach((thread, index) => {
-            console.log(getPrefix(), `Processing thread ${index + 1}/${reviewThreads.length}.`);
-            console.debug(getPrefix(), 'Thread element:', thread);
-
+        
+        for (const thread of reviewThreads) {
+            // Quick check for CodeRabbit authorship
             if (!thread.querySelector('a.author[href="/apps/coderabbitai"]')) {
-                console.log(getPrefix(), `Thread ${index + 1} is NOT a CodeRabbit comment. Skipping.`);
-                return;
+                continue;
             }
-            console.log(getPrefix(), `Thread ${index + 1} is a CodeRabbit comment.`);
 
             const commentBody = thread.querySelector('.comment-body');
-            if (!commentBody) {
-                console.log(getPrefix(), `Thread ${index + 1} has no comment body. Skipping.`);
-                return;
-            }
-            console.debug(getPrefix(), 'Found comment body:', commentBody);
+            if (!commentBody) continue;
 
-            const bodyClone = commentBody.cloneNode(true);
-
-            // Extract components separately
-            const components = {
-                category: null,
-                reviewText: null,
-                codeDiff: null,
-                committableSuggestion: null,
-                aiPrompt: null,
-                tools: null,
-            };
-
-            // 1. Extract AI Prompt
-            const allDetails = bodyClone.querySelectorAll('details');
-            for (const details of allDetails) {
-                const summary = details.querySelector('summary');
-                if (summary) {
-                    const summaryText = summary.textContent.trim();
-                    if (summaryText.includes('Prompt for AI Agents') || summaryText.includes('🤖 Prompt')) {
-                        components.aiPrompt = details.querySelector('pre code, code')?.textContent.trim() || null;
-                        details.remove();
-                        break;
-                    }
-                }
-            }
-
-            // 2. Extract Tools section
-            const toolsDetails = bodyClone.querySelectorAll('details');
-            for (const details of toolsDetails) {
-                const summary = details.querySelector('summary');
-                if (summary) {
-                    const summaryText = summary.textContent.trim();
-                    if (summaryText.includes('Tools') || summaryText.includes('🧰 Tools')) {
-                        // Extract the inner details (nested tools info)
-                        const toolsContent = [];
-                        const innerDetails = details.querySelectorAll('details');
-                        innerDetails.forEach(inner => {
-                            const innerSummary = inner.querySelector('summary');
-                            if (innerSummary) {
-                                const toolName = innerSummary.textContent.trim();
-                                const toolInfo = [];
-                                inner.querySelectorAll('p').forEach(p => {
-                                    toolInfo.push(p.textContent.trim());
-                                });
-                                if (toolInfo.length > 0) {
-                                    toolsContent.push(`${toolName}:\n${toolInfo.join('\n')}`);
-                                } else {
-                                    toolsContent.push(toolName);
-                                }
-                            }
-                        });
-                        if (toolsContent.length > 0) {
-                            components.tools = toolsContent.join('\n\n');
-                        } else {
-                            // Fallback: just get all text content
-                            components.tools = details.textContent.replace(summaryText, '').trim();
-                        }
-                        details.remove();
-                        break;
-                    }
-                }
-            }
-
-            // 3. Extract Committable Suggestion
-            const remainingDetails = bodyClone.querySelectorAll('details');
-            for (const details of remainingDetails) {
-                const summary = details.querySelector('summary');
-                if (summary) {
-                    const summaryText = summary.textContent.trim();
-                    if (summaryText.includes('Committable suggestion') || summaryText.includes('📝 Committable')) {
-                        // Get the diff table content
-                        const diffTable = details.querySelector('.js-suggested-changes-blob table');
-                        if (diffTable) {
-                            const lines = [];
-                            diffTable.querySelectorAll('tr').forEach(row => {
-                                const cell = row.querySelector('.blob-code-inner');
-                                if (cell) {
-                                    const marker = row.querySelector('.blob-code-marker-addition') ? '+' : 
-                                                   row.querySelector('.blob-code-marker-deletion') ? '-' : ' ';
-                                    lines.push(marker + cell.textContent);
-                                }
-                            });
-                            components.committableSuggestion = lines.join('\n');
-                        }
-                        details.remove();
-                        break;
-                    }
-                }
-            }
-
-            // 4. Extract Code Diff (inline diff in the review)
-            const codeDiffBlock = bodyClone.querySelector('.highlight-source-diff');
-            if (codeDiffBlock) {
-                components.codeDiff = codeDiffBlock.textContent.trim();
-                codeDiffBlock.closest('div.highlight')?.remove() || codeDiffBlock.remove();
-            }
-
-            // 5. Extract Category (first line with emoji)
-            const fullText = bodyClone.textContent.trim();
-            const categoryRegex = /^([🛠️⚠️💡🧹📜][^\n]*)/;
-            const categoryMatch = fullText.match(categoryRegex);
-            components.category = categoryMatch ? categoryMatch[1].trim() : 'General';
+            // Parse without cloning
+            const components = parseCommentBody(commentBody);
 
             // Determine if this is a nitpick based on category
-            const isNitpick = components.category.toLowerCase().includes('nitpick') || 
-                              components.category.includes('🧹');
+            const categoryLower = components.category.toLowerCase();
+            const isNitpick = categoryLower.includes('nitpick') || components.category.includes('🧹');
 
-            // 6. Extract Review Text (everything remaining after removing extracted parts)
-            // Re-get the text after removals
-            let reviewText = bodyClone.textContent.trim();
-            // Remove the category line from the beginning
-            if (categoryMatch) {
-                reviewText = reviewText.substring(categoryMatch[0].length).trim();
-            }
-            components.reviewText = reviewText;
-
-            const reviewData = {
+            reviews.push({
                 type: isNitpick ? 'nitpick' : 'main',
-                components: components,
+                components,
                 hasPrompt: !!components.aiPrompt,
                 hasCommittable: !!components.committableSuggestion,
                 hasCodeDiff: !!components.codeDiff,
                 hasTools: !!components.tools,
                 element: thread,
-            };
-            reviews.push(reviewData);
-            console.log(getPrefix(), `Successfully parsed a 'main' review.`);
-            console.debug(getPrefix(), 'Parsed components:', components);
-        });
-        console.log(getPrefix(), '--- Finished processing main review threads ---');
+            });
+        }
 
-        console.log(getPrefix(), `--- PARSE END --- Found ${reviews.length} total review items.`);
-        console.debug(getPrefix(), 'Final parsed data:', reviews);
         return reviews;
     }
 
