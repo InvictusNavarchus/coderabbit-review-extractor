@@ -278,6 +278,7 @@
                 position: fixed;
                 width: 100%;
                 top: var(--cr-scroll-top, 0);
+                padding-right: var(--cr-scrollbar-width, 0);
             }
             
             /* Popup Body */
@@ -581,8 +582,8 @@
 
     // --- DATA EXTRACTION ---
     
-    // Pre-compiled regex for category extraction (avoid recreating on each call)
-    const CATEGORY_REGEX = /^([🛠️⚠️💡🧹📜][^\n]*)/;
+    // Pre-compiled regex for category extraction (Unicode flag for proper emoji handling)
+    const CATEGORY_REGEX = /^([🛠️⚠️💡🧹📜][^\n]*)/u;
     
     // Summary text patterns for quick matching
     const PATTERN_AI_PROMPT = ['Prompt for AI Agents', '🤖 Prompt'];
@@ -961,18 +962,98 @@
         return { activate, deactivate };
     }
     
-    function createPopup(stats, reviews) {
-        if (document.getElementById('cr-extractor-overlay')) return;
+    // --- MODAL UTILITY ---
+    /**
+     * Creates and manages a modal dialog with proper accessibility and cleanup
+     * @param {string} content - HTML content for the popup
+     * @param {Object} options - Modal options
+     * @param {string} options.ariaLabelledBy - ID of the element labeling the dialog
+     * @param {string[]} [options.closeSelectors=[]] - Additional selectors for close buttons
+     * @returns {{ overlay: HTMLElement, closePopup: () => void }}
+     */
+    function createModal(content, { ariaLabelledBy, closeSelectors = [] }) {
+        if (document.getElementById('cr-extractor-overlay')) {
+            return null;
+        }
         
         // Store previously focused element to restore later
         const previouslyFocused = document.activeElement;
         
+        // Create overlay
         const overlay = document.createElement('div');
         overlay.id = 'cr-extractor-overlay';
         overlay.setAttribute('role', 'dialog');
         overlay.setAttribute('aria-modal', 'true');
-        overlay.setAttribute('aria-labelledby', 'cr-popup-title');
+        overlay.setAttribute('aria-labelledby', ariaLabelledBy);
+        overlay.innerHTML = content;
         
+        document.body.appendChild(overlay);
+        
+        // Setup focus trap
+        const popup = overlay.querySelector('#cr-extractor-popup');
+        const focusTrap = createFocusTrap(popup);
+        
+        // Lock body scroll with scrollbar width compensation
+        const scrollY = window.scrollY;
+        const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+        document.body.style.setProperty('--cr-scroll-top', `-${scrollY}px`);
+        document.body.style.setProperty('--cr-scrollbar-width', `${scrollbarWidth}px`);
+        document.body.classList.add('cr-scroll-locked');
+        
+        // Escape key handler (defined here so closePopup can remove it)
+        const handleEscape = (e) => {
+            if (e.key === 'Escape') {
+                closePopup();
+            }
+        };
+        
+        // Close popup handler
+        const closePopup = () => {
+            // Remove event listeners first
+            document.removeEventListener('keydown', handleEscape);
+            
+            focusTrap.deactivate();
+            overlay.classList.remove('visible');
+            
+            // Unlock body scroll
+            document.body.classList.remove('cr-scroll-locked');
+            document.body.style.removeProperty('--cr-scroll-top');
+            document.body.style.removeProperty('--cr-scrollbar-width');
+            window.scrollTo(0, scrollY);
+            
+            setTimeout(() => {
+                overlay.remove();
+                // Restore focus to previously focused element
+                previouslyFocused?.focus();
+            }, 300);
+        };
+        
+        // Wire up close handlers
+        overlay.querySelector('.cr-popup-close')?.addEventListener('click', closePopup);
+        
+        // Click outside to close
+        overlay.addEventListener('click', (e) => {
+            if (e.target.id === 'cr-extractor-overlay') closePopup();
+        });
+        
+        // Escape key to close
+        document.addEventListener('keydown', handleEscape);
+        
+        // Wire up additional close buttons
+        for (const selector of closeSelectors) {
+            overlay.querySelector(selector)?.addEventListener('click', closePopup);
+        }
+        
+        // Activate focus trap and show popup
+        setTimeout(() => {
+            overlay.classList.add('visible');
+            focusTrap.activate();
+        }, 10);
+        
+        return { overlay, closePopup };
+    }
+    
+    function createPopup(stats, reviews) {
         // Build category stats HTML
         let categoryStatsHTML = '';
         const categoryEntries = Object.entries(stats.main.categories);
@@ -986,7 +1067,7 @@
             categoryStatsHTML = '<span style="color: var(--cr-text-muted)">None found</span>';
         }
         
-        overlay.innerHTML = `
+        const content = `
             <div id="cr-extractor-popup">
                 <div class="cr-popup-header">
                     <h2 id="cr-popup-title">
@@ -1094,50 +1175,10 @@
                 </div>
             </div>`;
         
-        document.body.appendChild(overlay);
+        const modal = createModal(content, { ariaLabelledBy: 'cr-popup-title' });
+        if (!modal) return;
         
-        // Setup focus trap
-        const popup = overlay.querySelector('#cr-extractor-popup');
-        const focusTrap = createFocusTrap(popup);
-        
-        // Lock body scroll
-        const scrollY = window.scrollY;
-        document.body.style.setProperty('--cr-scroll-top', `-${scrollY}px`);
-        document.body.classList.add('cr-scroll-locked');
-        
-        // Close popup handler
-        const closePopup = () => {
-            focusTrap.deactivate();
-            overlay.classList.remove('visible');
-            
-            // Unlock body scroll
-            document.body.classList.remove('cr-scroll-locked');
-            document.body.style.removeProperty('--cr-scroll-top');
-            window.scrollTo(0, scrollY);
-            
-            setTimeout(() => {
-                overlay.remove();
-                // Restore focus to previously focused element
-                previouslyFocused?.focus();
-            }, 300);
-        };
-        
-        // Close button click
-        overlay.querySelector('.cr-popup-close').addEventListener('click', closePopup);
-        
-        // Click outside to close
-        overlay.addEventListener('click', (e) => {
-            if (e.target.id === 'cr-extractor-overlay') closePopup();
-        });
-        
-        // Escape key to close
-        const handleEscape = (e) => {
-            if (e.key === 'Escape') {
-                closePopup();
-                document.removeEventListener('keydown', handleEscape);
-            }
-        };
-        document.addEventListener('keydown', handleEscape);
+        const { overlay } = modal;
         
         // Preset buttons
         const presetButtons = overlay.querySelectorAll('.cr-preset-btn');
@@ -1206,27 +1247,11 @@
                 copyBtn.removeAttribute('aria-label');
             }, 2000);
         });
-        
-        // Activate focus trap and show popup
-        setTimeout(() => {
-            overlay.classList.add('visible');
-            focusTrap.activate();
-        }, 10);
     }
     
     // --- EMPTY STATE POPUP ---
     function showEmptyState() {
-        if (document.getElementById('cr-extractor-overlay')) return;
-        
-        const previouslyFocused = document.activeElement;
-        
-        const overlay = document.createElement('div');
-        overlay.id = 'cr-extractor-overlay';
-        overlay.setAttribute('role', 'dialog');
-        overlay.setAttribute('aria-modal', 'true');
-        overlay.setAttribute('aria-labelledby', 'cr-empty-title');
-        
-        overlay.innerHTML = `
+        const content = `
             <div id="cr-extractor-popup">
                 <div class="cr-popup-header">
                     <h2 id="cr-popup-title">
@@ -1256,49 +1281,10 @@
                 </div>
             </div>`;
         
-        document.body.appendChild(overlay);
-        
-        const popup = overlay.querySelector('#cr-extractor-popup');
-        const focusTrap = createFocusTrap(popup);
-        
-        // Lock body scroll
-        const scrollY = window.scrollY;
-        document.body.style.setProperty('--cr-scroll-top', `-${scrollY}px`);
-        document.body.classList.add('cr-scroll-locked');
-        
-        const closePopup = () => {
-            focusTrap.deactivate();
-            overlay.classList.remove('visible');
-            
-            // Unlock body scroll
-            document.body.classList.remove('cr-scroll-locked');
-            document.body.style.removeProperty('--cr-scroll-top');
-            window.scrollTo(0, scrollY);
-            
-            setTimeout(() => {
-                overlay.remove();
-                previouslyFocused?.focus();
-            }, 300);
-        };
-        
-        overlay.querySelector('.cr-popup-close').addEventListener('click', closePopup);
-        overlay.querySelector('#cr-close-empty-btn').addEventListener('click', closePopup);
-        overlay.addEventListener('click', (e) => {
-            if (e.target.id === 'cr-extractor-overlay') closePopup();
+        createModal(content, {
+            ariaLabelledBy: 'cr-empty-title',
+            closeSelectors: ['#cr-close-empty-btn']
         });
-        
-        const handleEscape = (e) => {
-            if (e.key === 'Escape') {
-                closePopup();
-                document.removeEventListener('keydown', handleEscape);
-            }
-        };
-        document.addEventListener('keydown', handleEscape);
-        
-        setTimeout(() => {
-            overlay.classList.add('visible');
-            focusTrap.activate();
-        }, 10);
     }
     
     // --- HTML ESCAPE UTILITY ---
