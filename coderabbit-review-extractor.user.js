@@ -17,7 +17,6 @@
     // --- UTILITIES ---
     const SCRIPT_NAME = 'CodeRabbit Extractor';
     const SCRIPT_EMOJI = '🐰';
-    const NITPICK_SUMMARY_SELECTOR = 'details summary:is(:-webkit-any(:contains("Nitpick comments"), :contains("🧹 Nitpick"))), details summary:is(:-moz-any(:contains("Nitpick comments"), :contains("🧹 Nitpick"))), details summary:is(:-ms-any(:contains("Nitpick comments"), :contains("🧹 Nitpick"))), details summary:is(:contains("Nitpick comments"), :contains("🧹 Nitpick"))';
 
     function getPrefix() {
         const now = new Date();
@@ -102,15 +101,27 @@
 
 
             const bodyClone = commentBody.cloneNode(true);
-            const aiPromptSelector = 'details:has(> summary:is(:-webkit-any(:contains("Prompt for AI Agents"), :contains("🤖 Prompt"))))';
-            console.log(getPrefix(), `Searching for AI prompt with selector: ${aiPromptSelector}`);
-            const aiPromptDetails = bodyClone.querySelector(aiPromptSelector);
 
+            // Find the AI prompt <details> by checking summary text content
             let promptText = null;
+            const allDetails = bodyClone.querySelectorAll('details');
+            let aiPromptDetails = null;
+
+            for (const details of allDetails) {
+                const summary = details.querySelector('summary');
+                if (summary) {
+                    const summaryText = summary.textContent.trim();
+                    if (summaryText.includes('Prompt for AI Agents') || summaryText.includes('🤖 Prompt')) {
+                        aiPromptDetails = details;
+                        break;
+                    }
+                }
+            }
+
             if (aiPromptDetails) {
                 console.log(getPrefix(), 'Found AI prompt <details> element.');
                 console.debug(getPrefix(), 'AI Prompt Details Element:', aiPromptDetails);
-                promptText = aiPromptDetails.querySelector('pre > code, code')?.textContent.trim() || null;
+                promptText = aiPromptDetails.querySelector('pre code, code')?.textContent.trim() || null;
                 console.log(getPrefix(), `Extracted prompt text: ${promptText ? `"${promptText.substring(0, 50)}..."` : 'null'}`);
                 aiPromptDetails.remove();
             } else {
@@ -140,8 +151,18 @@
         console.log(getPrefix(), '--- Finished processing main review threads ---');
 
         // 2. Nitpick Reviews (in the main review summary)
-        console.log(getPrefix(), 'Step 2: Searching for Nitpick summary section with selector:', NITPICK_SUMMARY_SELECTOR);
-        const nitpickSummary = document.querySelector(NITPICK_SUMMARY_SELECTOR);
+        console.log(getPrefix(), 'Step 2: Searching for Nitpick summary section...');
+        
+        // Find nitpick summary by checking summary text content
+        let nitpickSummary = null;
+        const allSummaries = document.querySelectorAll('details summary');
+        for (const summary of allSummaries) {
+            const text = summary.textContent.trim();
+            if (text.includes('Nitpick comments') || text.includes('🧹 Nitpick')) {
+                nitpickSummary = summary;
+                break;
+            }
+        }
 
         if (nitpickSummary) {
             console.log(getPrefix(), 'Found Nitpick summary element.');
