@@ -99,54 +99,91 @@
             }
             console.debug(getPrefix(), 'Found comment body:', commentBody);
 
-
             const bodyClone = commentBody.cloneNode(true);
 
-            // Find the AI prompt <details> by checking summary text content
-            let promptText = null;
-            const allDetails = bodyClone.querySelectorAll('details');
-            let aiPromptDetails = null;
+            // Extract components separately
+            const components = {
+                category: null,
+                reviewText: null,
+                codeDiff: null,
+                committableSuggestion: null,
+                aiPrompt: null,
+            };
 
+            // 1. Extract AI Prompt
+            const allDetails = bodyClone.querySelectorAll('details');
             for (const details of allDetails) {
                 const summary = details.querySelector('summary');
                 if (summary) {
                     const summaryText = summary.textContent.trim();
                     if (summaryText.includes('Prompt for AI Agents') || summaryText.includes('🤖 Prompt')) {
-                        aiPromptDetails = details;
+                        components.aiPrompt = details.querySelector('pre code, code')?.textContent.trim() || null;
+                        details.remove();
                         break;
                     }
                 }
             }
 
-            if (aiPromptDetails) {
-                console.log(getPrefix(), 'Found AI prompt <details> element.');
-                console.debug(getPrefix(), 'AI Prompt Details Element:', aiPromptDetails);
-                promptText = aiPromptDetails.querySelector('pre code, code')?.textContent.trim() || null;
-                console.log(getPrefix(), `Extracted prompt text: ${promptText ? `"${promptText.substring(0, 50)}..."` : 'null'}`);
-                aiPromptDetails.remove();
-            } else {
-                console.log(getPrefix(), 'No AI prompt found in this thread.');
+            // 2. Extract Committable Suggestion
+            const remainingDetails = bodyClone.querySelectorAll('details');
+            for (const details of remainingDetails) {
+                const summary = details.querySelector('summary');
+                if (summary) {
+                    const summaryText = summary.textContent.trim();
+                    if (summaryText.includes('Committable suggestion') || summaryText.includes('📝 Committable')) {
+                        // Get the diff table content
+                        const diffTable = details.querySelector('.js-suggested-changes-blob table');
+                        if (diffTable) {
+                            const lines = [];
+                            diffTable.querySelectorAll('tr').forEach(row => {
+                                const cell = row.querySelector('.blob-code-inner');
+                                if (cell) {
+                                    const marker = row.querySelector('.blob-code-marker-addition') ? '+' : 
+                                                   row.querySelector('.blob-code-marker-deletion') ? '-' : ' ';
+                                    lines.push(marker + cell.textContent);
+                                }
+                            });
+                            components.committableSuggestion = lines.join('\n');
+                        }
+                        details.remove();
+                        break;
+                    }
+                }
             }
 
-            const fullText = bodyClone.textContent.trim();
-            console.log(getPrefix(), `Extracted full text (trimmed): "${fullText.substring(0, 100)}..."`);
+            // 3. Extract Code Diff (inline diff in the review)
+            const codeDiffBlock = bodyClone.querySelector('.highlight-source-diff');
+            if (codeDiffBlock) {
+                components.codeDiff = codeDiffBlock.textContent.trim();
+                codeDiffBlock.closest('div.highlight')?.remove() || codeDiffBlock.remove();
+            }
 
-            const categoryRegex = /^(_|\*|\s)*(?:<g-emoji.+?>\s*)?([🛠️⚠️💡🧹📜].*?)(_|\*|\s)*\n/;
+            // 4. Extract Category (first line with emoji)
+            const fullText = bodyClone.textContent.trim();
+            const categoryRegex = /^([🛠️⚠️💡🧹📜][^\n]*)/;
             const categoryMatch = fullText.match(categoryRegex);
-            const category = categoryMatch ? categoryMatch[2].trim() : 'General';
-            console.log(getPrefix(), `Category match found: ${!!categoryMatch}. Category: "${category}"`);
+            components.category = categoryMatch ? categoryMatch[1].trim() : 'General';
+
+            // 5. Extract Review Text (everything remaining after removing extracted parts)
+            // Re-get the text after removals
+            let reviewText = bodyClone.textContent.trim();
+            // Remove the category line from the beginning
+            if (categoryMatch) {
+                reviewText = reviewText.substring(categoryMatch[0].length).trim();
+            }
+            components.reviewText = reviewText;
 
             const reviewData = {
                 type: 'main',
-                category: category,
-                fullText: fullText,
-                promptText: promptText,
-                hasPrompt: !!promptText,
+                components: components,
+                hasPrompt: !!components.aiPrompt,
+                hasCommittable: !!components.committableSuggestion,
+                hasCodeDiff: !!components.codeDiff,
                 element: thread,
             };
             reviews.push(reviewData);
             console.log(getPrefix(), `Successfully parsed a 'main' review.`);
-            console.debug(getPrefix(), 'Parsed object:', reviewData);
+            console.debug(getPrefix(), 'Parsed components:', components);
         });
         console.log(getPrefix(), '--- Finished processing main review threads ---');
 
@@ -190,10 +227,16 @@
                     if (fullText) {
                          const nitpickData = {
                             type: 'nitpick',
-                            category: 'Nitpick',
-                            fullText: `File: ${filePath}\n\n${fullText}`,
-                            promptText: null,
+                            components: {
+                                category: 'Nitpick',
+                                reviewText: `File: ${filePath}\n\n${fullText}`,
+                                codeDiff: null,
+                                committableSuggestion: null,
+                                aiPrompt: null,
+                            },
                             hasPrompt: false,
+                            hasCommittable: false,
+                            hasCodeDiff: false,
                             element: fileBlock,
                         };
                         reviews.push(nitpickData);
@@ -218,12 +261,17 @@
 
     // --- UI & LOGIC ---
     function calculateStats(reviews) {
-        const stats = { main: { total: 0, withPrompt: 0, categories: {} }, nitpicks: { total: 0 } };
+        const stats = { 
+            main: { total: 0, withPrompt: 0, withCommittable: 0, withCodeDiff: 0, categories: {} }, 
+            nitpicks: { total: 0 } 
+        };
         reviews.forEach(review => {
             if (review.type === 'main') {
                 stats.main.total++;
                 if (review.hasPrompt) stats.main.withPrompt++;
-                const categoryName = review.category.replace(/<g-emoji.*?>/g, '').trim();
+                if (review.hasCommittable) stats.main.withCommittable++;
+                if (review.hasCodeDiff) stats.main.withCodeDiff++;
+                const categoryName = review.components.category.replace(/<g-emoji.*?>/g, '').trim();
                 stats.main.categories[categoryName] = (stats.main.categories[categoryName] || 0) + 1;
             } else if (review.type === 'nitpick') {
                 stats.nitpicks.total++;
@@ -234,59 +282,69 @@
 
     function generateCopyText(options, reviews) {
         let clipboardText = '';
-        const selectedOptions = [];
         const mainSuggestions = reviews.filter(r => r.type === 'main');
         const nitpickComments = reviews.filter(r => r.type === 'nitpick');
 
-        if (options.promptsOnly) selectedOptions.push("'Prompt for AI Agent' only");
-        if (options.fullMain) selectedOptions.push("full reviews of all main suggestions");
-        if (options.fullNitpicks) selectedOptions.push("full reviews of nitpick comments");
-        if (options.mainNoPrompt) selectedOptions.push("full reviews of main suggestions that don't have 'Prompt for AI Agent'");
+        // Build header based on selected options
+        const selectedComponents = [];
+        if (options.includeCategory) selectedComponents.push("category/header");
+        if (options.includeReviewText) selectedComponents.push("review text");
+        if (options.includeCodeDiff) selectedComponents.push("code diff");
+        if (options.includeCommittable) selectedComponents.push("committable suggestion");
+        if (options.includeAiPrompt) selectedComponents.push("AI prompt");
 
-        if (selectedOptions.length > 0) {
+        if (selectedComponents.length > 0) {
             clipboardText += `# CodeRabbit PR Review Analysis\n\n`;
-            clipboardText += `This document contains the following selections from the CodeRabbit review:\n- ${selectedOptions.join('\n- ')}\n\n---\n\n`;
+            clipboardText += `**Components included:** ${selectedComponents.join(', ')}\n`;
+            clipboardText += `**Main suggestions:** ${mainSuggestions.length} | **Nitpicks:** ${options.includeNitpicks ? nitpickComments.length : 0}\n\n---\n\n`;
         }
 
-        if (options.promptsOnly) {
-            const items = mainSuggestions.filter(r => r.hasPrompt);
-            if (items.length > 0) {
-                clipboardText += `## 🤖 Main Suggestion AI Prompts\n\n`;
-                items.forEach((r, i) => {
-                    clipboardText += `### Prompt ${i + 1}: ${r.category}\n`;
-                    clipboardText += '```\n' + r.promptText + '\n```\n\n';
-                });
-                clipboardText += `---\n\n`;
+        // Helper function to build a single review's text
+        const buildReviewText = (review, index, type) => {
+            let text = `### ${type} ${index + 1}`;
+            
+            if (options.includeCategory && review.components.category) {
+                text += `: ${review.components.category}`;
             }
-        }
-        if (options.fullMain) {
-            if (mainSuggestions.length > 0) {
-                clipboardText += `## 🚀 Full Main Suggestions\n\n`;
-                mainSuggestions.forEach((r, i) => {
-                    clipboardText += `### Suggestion ${i + 1}: ${r.category}\n\n${r.fullText}\n\n`;
-                });
-                clipboardText += `---\n\n`;
+            text += '\n\n';
+
+            if (options.includeReviewText && review.components.reviewText) {
+                text += `${review.components.reviewText}\n\n`;
             }
-        }
-        if (options.fullNitpicks) {
-            if (nitpickComments.length > 0) {
-                clipboardText += `## 🧹 Full Nitpick Comments\n\n`;
-                nitpickComments.forEach((r, i) => {
-                    clipboardText += `### Nitpick ${i + 1}\n\n${r.fullText}\n\n`;
-                });
-                clipboardText += `---\n\n`;
+
+            if (options.includeCodeDiff && review.components.codeDiff) {
+                text += `**Code Diff:**\n\`\`\`diff\n${review.components.codeDiff}\n\`\`\`\n\n`;
             }
-        }
-        if (options.mainNoPrompt) {
-            const items = mainSuggestions.filter(r => !r.hasPrompt);
-            if (items.length > 0) {
-                clipboardText += `## 📝 Main Suggestions (Without AI Prompts)\n\n`;
-                items.forEach((r, i) => {
-                    clipboardText += `### Suggestion ${i + 1}: ${r.category}\n\n${r.fullText}\n\n`;
-                });
-                clipboardText += `---\n\n`;
+
+            if (options.includeCommittable && review.components.committableSuggestion) {
+                text += `**Committable Suggestion:**\n\`\`\`diff\n${review.components.committableSuggestion}\n\`\`\`\n\n`;
             }
+
+            if (options.includeAiPrompt && review.components.aiPrompt) {
+                text += `**AI Prompt:**\n\`\`\`\n${review.components.aiPrompt}\n\`\`\`\n\n`;
+            }
+
+            return text;
+        };
+
+        // Process main suggestions
+        if (mainSuggestions.length > 0 && (options.includeCategory || options.includeReviewText || options.includeCodeDiff || options.includeCommittable || options.includeAiPrompt)) {
+            clipboardText += `## 🚀 Main Suggestions\n\n`;
+            mainSuggestions.forEach((review, i) => {
+                clipboardText += buildReviewText(review, i, 'Suggestion');
+            });
+            clipboardText += `---\n\n`;
         }
+
+        // Process nitpicks
+        if (options.includeNitpicks && nitpickComments.length > 0) {
+            clipboardText += `## 🧹 Nitpick Comments\n\n`;
+            nitpickComments.forEach((review, i) => {
+                clipboardText += buildReviewText(review, i, 'Nitpick');
+            });
+            clipboardText += `---\n\n`;
+        }
+
         return clipboardText.trim() || "No content selected or found for the chosen options.";
     }
 
@@ -310,12 +368,18 @@
                         <div class="cr-stat-item"><div class="cr-stat-item-title">With AI Prompts</div><div class="cr-stat-item-value">${stats.main.withPrompt}</div></div>
                         <div class="cr-stat-item"><div class="cr-stat-item-title">Categories</div>${categoryStatsHTML}</div>
                     </div>
-                    <h3 class="cr-section-title">📋 Copy Options</h3>
+                    <h3 class="cr-section-title">📋 Copy Components</h3>
+                    <p style="color: var(--cr-text-muted); font-size: 0.85em; margin-bottom: 12px;">Select which parts of each review to include:</p>
                     <div class="cr-options-list">
-                        <label class="cr-toggle"><input type="checkbox" id="cr-opt-prompts" checked><span class="switch"></span><span class="cr-toggle-label">Copy 'Prompt for AI Agent' only</span></label>
-                        <label class="cr-toggle"><input type="checkbox" id="cr-opt-full-main"><span class="switch"></span><span class="cr-toggle-label">Copy full reviews of all main suggestions</span></label>
-                        <label class="cr-toggle"><input type="checkbox" id="cr-opt-nitpicks"><span class="switch"></span><span class="cr-toggle-label">Copy full reviews of nitpick comments</span></label>
-                        <label class="cr-toggle"><input type="checkbox" id="cr-opt-main-no-prompt"><span class="switch"></span><span class="cr-toggle-label">Copy main suggestions that don't have 'Prompt for AI Agent'</span></label>
+                        <label class="cr-toggle"><input type="checkbox" id="cr-opt-category" checked><span class="switch"></span><span class="cr-toggle-label">Category / Header</span></label>
+                        <label class="cr-toggle"><input type="checkbox" id="cr-opt-review-text" checked><span class="switch"></span><span class="cr-toggle-label">Review Text</span></label>
+                        <label class="cr-toggle"><input type="checkbox" id="cr-opt-code-diff" checked><span class="switch"></span><span class="cr-toggle-label">Code Diff</span></label>
+                        <label class="cr-toggle"><input type="checkbox" id="cr-opt-committable"><span class="switch"></span><span class="cr-toggle-label">Committable Suggestion</span></label>
+                        <label class="cr-toggle"><input type="checkbox" id="cr-opt-ai-prompt" checked><span class="switch"></span><span class="cr-toggle-label">AI Prompt</span></label>
+                    </div>
+                    <h3 class="cr-section-title">📂 Include Sources</h3>
+                    <div class="cr-options-list">
+                        <label class="cr-toggle"><input type="checkbox" id="cr-opt-nitpicks"><span class="switch"></span><span class="cr-toggle-label">Include Nitpick Comments</span></label>
                     </div>
                 </div>
                 <div class="cr-popup-footer"><button id="cr-copy-btn">Copy to Clipboard</button></div>
@@ -327,10 +391,12 @@
         const copyBtn = overlay.querySelector('#cr-copy-btn');
         copyBtn.addEventListener('click', () => {
             const options = {
-                promptsOnly: document.getElementById('cr-opt-prompts').checked,
-                fullMain: document.getElementById('cr-opt-full-main').checked,
-                fullNitpicks: document.getElementById('cr-opt-nitpicks').checked,
-                mainNoPrompt: document.getElementById('cr-opt-main-no-prompt').checked
+                includeCategory: document.getElementById('cr-opt-category').checked,
+                includeReviewText: document.getElementById('cr-opt-review-text').checked,
+                includeCodeDiff: document.getElementById('cr-opt-code-diff').checked,
+                includeCommittable: document.getElementById('cr-opt-committable').checked,
+                includeAiPrompt: document.getElementById('cr-opt-ai-prompt').checked,
+                includeNitpicks: document.getElementById('cr-opt-nitpicks').checked,
             };
             const textToCopy = generateCopyText(options, reviews);
             GM_setClipboard(textToCopy);
