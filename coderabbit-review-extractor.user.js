@@ -272,11 +272,20 @@
                 box-shadow: 0 0 0 2px var(--cr-focus-ring);
             }
             
-            /* Body */
+            /* Body scroll lock when modal is open */
+            body.cr-scroll-locked {
+                overflow: hidden !important;
+                position: fixed;
+                width: 100%;
+                top: var(--cr-scroll-top, 0);
+            }
+            
+            /* Popup Body */
             .cr-popup-body {
                 padding: var(--cr-space-5);
                 overflow-y: auto;
                 flex: 1;
+                overscroll-behavior: contain;
             }
             
             /* Section Titles */
@@ -1153,10 +1162,21 @@
         const popup = overlay.querySelector('#cr-extractor-popup');
         const focusTrap = createFocusTrap(popup);
         
+        // Lock body scroll
+        const scrollY = window.scrollY;
+        document.body.style.setProperty('--cr-scroll-top', `-${scrollY}px`);
+        document.body.classList.add('cr-scroll-locked');
+        
         // Close popup handler
         const closePopup = () => {
             focusTrap.deactivate();
             overlay.classList.remove('visible');
+            
+            // Unlock body scroll
+            document.body.classList.remove('cr-scroll-locked');
+            document.body.style.removeProperty('--cr-scroll-top');
+            window.scrollTo(0, scrollY);
+            
             setTimeout(() => {
                 overlay.remove();
                 // Restore focus to previously focused element
@@ -1303,9 +1323,20 @@
         const popup = overlay.querySelector('#cr-extractor-popup');
         const focusTrap = createFocusTrap(popup);
         
+        // Lock body scroll
+        const scrollY = window.scrollY;
+        document.body.style.setProperty('--cr-scroll-top', `-${scrollY}px`);
+        document.body.classList.add('cr-scroll-locked');
+        
         const closePopup = () => {
             focusTrap.deactivate();
             overlay.classList.remove('visible');
+            
+            // Unlock body scroll
+            document.body.classList.remove('cr-scroll-locked');
+            document.body.style.removeProperty('--cr-scroll-top');
+            window.scrollTo(0, scrollY);
+            
             setTimeout(() => {
                 overlay.remove();
                 previouslyFocused?.focus();
