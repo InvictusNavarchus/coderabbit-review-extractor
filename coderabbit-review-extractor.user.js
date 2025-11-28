@@ -384,13 +384,6 @@
                 flex: 1;
             }
             
-            .cr-toggle-hint {
-                font-size: var(--cr-font-size-xs);
-                color: var(--cr-text-muted);
-                margin-left: var(--cr-space-3);
-                margin-top: var(--cr-space-1);
-            }
-            
             /* Visually hidden but accessible checkbox */
             .cr-toggle input[type="checkbox"] {
                 position: absolute;
@@ -552,42 +545,6 @@
                 cursor: not-allowed;
             }
             
-            /* Loading State */
-            .cr-loading {
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                justify-content: center;
-                padding: var(--cr-space-6);
-                gap: var(--cr-space-4);
-            }
-            
-            .cr-spinner {
-                width: 2.5rem;
-                height: 2.5rem;
-                border: 3px solid var(--cr-border);
-                border-top-color: var(--cr-primary);
-                border-radius: var(--cr-radius-full);
-                animation: cr-spin 0.8s linear infinite;
-            }
-            
-            @keyframes cr-spin {
-                to { transform: rotate(360deg); }
-            }
-            
-            @media (prefers-reduced-motion: reduce) {
-                .cr-spinner {
-                    animation: none;
-                    border-top-color: var(--cr-border);
-                    opacity: 0.5;
-                }
-            }
-            
-            .cr-loading-text {
-                color: var(--cr-text-muted);
-                font-size: var(--cr-font-size-sm);
-            }
-            
             /* Empty State */
             .cr-empty-state {
                 text-align: center;
@@ -618,83 +575,6 @@
                 color: var(--cr-text-muted);
                 font-size: var(--cr-font-size-xs);
                 margin-bottom: var(--cr-space-3);
-            }
-            
-            /* Tooltip */
-            .cr-tooltip-wrapper {
-                position: relative;
-                display: inline-flex;
-                align-items: center;
-            }
-            
-            .cr-tooltip-icon {
-                width: 1rem;
-                height: 1rem;
-                border-radius: var(--cr-radius-full);
-                background-color: var(--cr-bg-light);
-                border: 1px solid var(--cr-border);
-                color: var(--cr-text-muted);
-                font-size: var(--cr-font-size-xs);
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                margin-left: var(--cr-space-2);
-                cursor: help;
-                font-weight: 600;
-                font-style: normal;
-            }
-            
-            .cr-tooltip-icon:hover + .cr-tooltip,
-            .cr-tooltip-icon:focus + .cr-tooltip {
-                opacity: 1;
-                visibility: visible;
-                transform: translateX(-50%) translateY(0);
-            }
-            
-            .cr-tooltip {
-                position: absolute;
-                bottom: calc(100% + 8px);
-                left: 50%;
-                transform: translateX(-50%) translateY(4px);
-                background-color: var(--cr-bg);
-                border: 1px solid var(--cr-border);
-                border-radius: var(--cr-radius-sm);
-                padding: var(--cr-space-2) var(--cr-space-3);
-                font-size: var(--cr-font-size-xs);
-                color: var(--cr-text);
-                white-space: nowrap;
-                max-width: 200px;
-                white-space: normal;
-                text-align: center;
-                box-shadow: var(--cr-shadow-md);
-                opacity: 0;
-                visibility: hidden;
-                transition: opacity var(--cr-transition-fast), transform var(--cr-transition-fast), visibility var(--cr-transition-fast);
-                z-index: 10;
-                pointer-events: none;
-            }
-            
-            .cr-tooltip::after {
-                content: '';
-                position: absolute;
-                top: 100%;
-                left: 50%;
-                transform: translateX(-50%);
-                border: 6px solid transparent;
-                border-top-color: var(--cr-border);
-            }
-            
-            /* Screen reader only utility */
-            .cr-sr-only {
-                position: absolute;
-                width: 1px;
-                height: 1px;
-                padding: 0;
-                margin: -1px;
-                overflow: hidden;
-                clip: rect(0, 0, 0, 0);
-                white-space: nowrap;
-                border: 0;
             }
         `);
     }
@@ -1008,16 +888,6 @@
         return { activate, deactivate };
     }
     
-    // --- TOOLTIP COMPONENT ---
-    function createTooltipHTML(text) {
-        return `
-            <span class="cr-tooltip-wrapper">
-                <span class="cr-tooltip-icon" tabindex="0" role="button" aria-label="More info">?</span>
-                <span class="cr-tooltip" role="tooltip">${text}</span>
-            </span>
-        `;
-    }
-    
     function createPopup(stats, reviews) {
         if (document.getElementById('cr-extractor-overlay')) return;
         
@@ -1107,25 +977,21 @@
                                 <input type="checkbox" id="cr-opt-code-diff" checked>
                                 <span class="switch" aria-hidden="true"></span>
                                 <span class="cr-toggle-label">Code Diff</span>
-                                ${createTooltipHTML('Inline code differences shown in the review')}
                             </label>
                             <label class="cr-toggle">
                                 <input type="checkbox" id="cr-opt-committable">
                                 <span class="switch" aria-hidden="true"></span>
                                 <span class="cr-toggle-label">Committable Suggestion</span>
-                                ${createTooltipHTML('Ready-to-apply code changes that can be committed directly')}
                             </label>
                             <label class="cr-toggle">
                                 <input type="checkbox" id="cr-opt-ai-prompt" checked>
                                 <span class="switch" aria-hidden="true"></span>
                                 <span class="cr-toggle-label">AI Prompt</span>
-                                ${createTooltipHTML('Prompts designed for AI agents to apply fixes automatically')}
                             </label>
                             <label class="cr-toggle">
                                 <input type="checkbox" id="cr-opt-tools">
                                 <span class="switch" aria-hidden="true"></span>
                                 <span class="cr-toggle-label">Tools Used</span>
-                                ${createTooltipHTML('Analysis tools used by CodeRabbit (linters, type checkers, etc.)')}
                             </label>
                         </div>
                     </section>
@@ -1139,7 +1005,6 @@
                                 <input type="checkbox" id="cr-opt-nitpicks">
                                 <span class="switch" aria-hidden="true"></span>
                                 <span class="cr-toggle-label">Include Nitpick Comments</span>
-                                ${createTooltipHTML('Minor style or formatting suggestions (marked with 🧹)')}
                             </label>
                         </div>
                     </section>
