@@ -108,6 +108,7 @@
                 codeDiff: null,
                 committableSuggestion: null,
                 aiPrompt: null,
+                tools: null,
             };
 
             // 1. Extract AI Prompt
@@ -124,7 +125,44 @@
                 }
             }
 
-            // 2. Extract Committable Suggestion
+            // 2. Extract Tools section
+            const toolsDetails = bodyClone.querySelectorAll('details');
+            for (const details of toolsDetails) {
+                const summary = details.querySelector('summary');
+                if (summary) {
+                    const summaryText = summary.textContent.trim();
+                    if (summaryText.includes('Tools') || summaryText.includes('🧰 Tools')) {
+                        // Extract the inner details (nested tools info)
+                        const toolsContent = [];
+                        const innerDetails = details.querySelectorAll('details');
+                        innerDetails.forEach(inner => {
+                            const innerSummary = inner.querySelector('summary');
+                            if (innerSummary) {
+                                const toolName = innerSummary.textContent.trim();
+                                const toolInfo = [];
+                                inner.querySelectorAll('p').forEach(p => {
+                                    toolInfo.push(p.textContent.trim());
+                                });
+                                if (toolInfo.length > 0) {
+                                    toolsContent.push(`${toolName}:\n${toolInfo.join('\n')}`);
+                                } else {
+                                    toolsContent.push(toolName);
+                                }
+                            }
+                        });
+                        if (toolsContent.length > 0) {
+                            components.tools = toolsContent.join('\n\n');
+                        } else {
+                            // Fallback: just get all text content
+                            components.tools = details.textContent.replace(summaryText, '').trim();
+                        }
+                        details.remove();
+                        break;
+                    }
+                }
+            }
+
+            // 3. Extract Committable Suggestion
             const remainingDetails = bodyClone.querySelectorAll('details');
             for (const details of remainingDetails) {
                 const summary = details.querySelector('summary');
@@ -151,20 +189,20 @@
                 }
             }
 
-            // 3. Extract Code Diff (inline diff in the review)
+            // 4. Extract Code Diff (inline diff in the review)
             const codeDiffBlock = bodyClone.querySelector('.highlight-source-diff');
             if (codeDiffBlock) {
                 components.codeDiff = codeDiffBlock.textContent.trim();
                 codeDiffBlock.closest('div.highlight')?.remove() || codeDiffBlock.remove();
             }
 
-            // 4. Extract Category (first line with emoji)
+            // 5. Extract Category (first line with emoji)
             const fullText = bodyClone.textContent.trim();
             const categoryRegex = /^([🛠️⚠️💡🧹📜][^\n]*)/;
             const categoryMatch = fullText.match(categoryRegex);
             components.category = categoryMatch ? categoryMatch[1].trim() : 'General';
 
-            // 5. Extract Review Text (everything remaining after removing extracted parts)
+            // 6. Extract Review Text (everything remaining after removing extracted parts)
             // Re-get the text after removals
             let reviewText = bodyClone.textContent.trim();
             // Remove the category line from the beginning
@@ -179,6 +217,7 @@
                 hasPrompt: !!components.aiPrompt,
                 hasCommittable: !!components.committableSuggestion,
                 hasCodeDiff: !!components.codeDiff,
+                hasTools: !!components.tools,
                 element: thread,
             };
             reviews.push(reviewData);
@@ -233,10 +272,12 @@
                                 codeDiff: null,
                                 committableSuggestion: null,
                                 aiPrompt: null,
+                                tools: null,
                             },
                             hasPrompt: false,
                             hasCommittable: false,
                             hasCodeDiff: false,
+                            hasTools: false,
                             element: fileBlock,
                         };
                         reviews.push(nitpickData);
@@ -262,7 +303,7 @@
     // --- UI & LOGIC ---
     function calculateStats(reviews) {
         const stats = { 
-            main: { total: 0, withPrompt: 0, withCommittable: 0, withCodeDiff: 0, categories: {} }, 
+            main: { total: 0, withPrompt: 0, withCommittable: 0, withCodeDiff: 0, withTools: 0, categories: {} }, 
             nitpicks: { total: 0 } 
         };
         reviews.forEach(review => {
@@ -271,6 +312,7 @@
                 if (review.hasPrompt) stats.main.withPrompt++;
                 if (review.hasCommittable) stats.main.withCommittable++;
                 if (review.hasCodeDiff) stats.main.withCodeDiff++;
+                if (review.hasTools) stats.main.withTools++;
                 const categoryName = review.components.category.replace(/<g-emoji.*?>/g, '').trim();
                 stats.main.categories[categoryName] = (stats.main.categories[categoryName] || 0) + 1;
             } else if (review.type === 'nitpick') {
@@ -292,6 +334,7 @@
         if (options.includeCodeDiff) selectedComponents.push("code diff");
         if (options.includeCommittable) selectedComponents.push("committable suggestion");
         if (options.includeAiPrompt) selectedComponents.push("AI prompt");
+        if (options.includeTools) selectedComponents.push("tools");
 
         if (selectedComponents.length > 0) {
             clipboardText += `# CodeRabbit PR Review Analysis\n\n`;
@@ -324,11 +367,15 @@
                 text += `**AI Prompt:**\n\`\`\`\n${review.components.aiPrompt}\n\`\`\`\n\n`;
             }
 
+            if (options.includeTools && review.components.tools) {
+                text += `**Tools Used:**\n${review.components.tools}\n\n`;
+            }
+
             return text;
         };
 
         // Process main suggestions
-        if (mainSuggestions.length > 0 && (options.includeCategory || options.includeReviewText || options.includeCodeDiff || options.includeCommittable || options.includeAiPrompt)) {
+        if (mainSuggestions.length > 0 && (options.includeCategory || options.includeReviewText || options.includeCodeDiff || options.includeCommittable || options.includeAiPrompt || options.includeTools)) {
             clipboardText += `## 🚀 Main Suggestions\n\n`;
             mainSuggestions.forEach((review, i) => {
                 clipboardText += buildReviewText(review, i, 'Suggestion');
@@ -366,6 +413,7 @@
                         <div class="cr-stat-item"><div class="cr-stat-item-title">Main Suggestions</div><div class="cr-stat-item-value">${stats.main.total}</div></div>
                         <div class="cr-stat-item"><div class="cr-stat-item-title">Nitpick Comments</div><div class="cr-stat-item-value">${stats.nitpicks.total}</div></div>
                         <div class="cr-stat-item"><div class="cr-stat-item-title">With AI Prompts</div><div class="cr-stat-item-value">${stats.main.withPrompt}</div></div>
+                        <div class="cr-stat-item"><div class="cr-stat-item-title">With Tools</div><div class="cr-stat-item-value">${stats.main.withTools}</div></div>
                         <div class="cr-stat-item"><div class="cr-stat-item-title">Categories</div>${categoryStatsHTML}</div>
                     </div>
                     <h3 class="cr-section-title">📋 Copy Components</h3>
@@ -376,6 +424,7 @@
                         <label class="cr-toggle"><input type="checkbox" id="cr-opt-code-diff" checked><span class="switch"></span><span class="cr-toggle-label">Code Diff</span></label>
                         <label class="cr-toggle"><input type="checkbox" id="cr-opt-committable"><span class="switch"></span><span class="cr-toggle-label">Committable Suggestion</span></label>
                         <label class="cr-toggle"><input type="checkbox" id="cr-opt-ai-prompt" checked><span class="switch"></span><span class="cr-toggle-label">AI Prompt</span></label>
+                        <label class="cr-toggle"><input type="checkbox" id="cr-opt-tools"><span class="switch"></span><span class="cr-toggle-label">Tools Used</span></label>
                     </div>
                     <h3 class="cr-section-title">📂 Include Sources</h3>
                     <div class="cr-options-list">
@@ -396,6 +445,7 @@
                 includeCodeDiff: document.getElementById('cr-opt-code-diff').checked,
                 includeCommittable: document.getElementById('cr-opt-committable').checked,
                 includeAiPrompt: document.getElementById('cr-opt-ai-prompt').checked,
+                includeTools: document.getElementById('cr-opt-tools').checked,
                 includeNitpicks: document.getElementById('cr-opt-nitpicks').checked,
             };
             const textToCopy = generateCopyText(options, reviews);
