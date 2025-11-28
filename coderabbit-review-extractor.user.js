@@ -77,14 +77,14 @@
                 --cr-border-focus: #7c82b8;
                 --cr-text: #e8e8ed;
                 --cr-text-muted: #b4b9d4;  /* Improved contrast: ~5.2:1 */
-                --cr-primary: #6366f1;     /* Indigo - more accessible than red for primary */
-                --cr-primary-hover: #818cf8;
+                --cr-primary: #ff4d4d;     /* CodeRabbit brand red */
+                --cr-primary-hover: #ff6b6b;
                 --cr-primary-text: #ffffff;
                 --cr-success: #22c55e;
                 --cr-success-text: #052e16;
                 --cr-danger: #ef4444;
                 --cr-danger-hover: #f87171;
-                --cr-focus-ring: rgba(99, 102, 241, 0.5);
+                --cr-focus-ring: rgba(255, 77, 77, 0.4);
             }
             
             /* Light theme support */
@@ -97,8 +97,8 @@
                     --cr-border-focus: #a1a1aa;
                     --cr-text: #18181b;
                     --cr-text-muted: #52525b;  /* ~7:1 contrast on white */
-                    --cr-primary: #4f46e5;
-                    --cr-primary-hover: #6366f1;
+                    --cr-primary: #e63939;     /* Slightly darker red for light mode contrast */
+                    --cr-primary-hover: #ff4d4d;
                     --cr-primary-text: #ffffff;
                     --cr-success: #16a34a;
                     --cr-success-text: #ffffff;
@@ -106,7 +106,7 @@
                     --cr-danger-hover: #ef4444;
                     --cr-shadow-md: 0 4px 10px rgba(0, 0, 0, 0.1);
                     --cr-shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.15);
-                    --cr-focus-ring: rgba(79, 70, 229, 0.4);
+                    --cr-focus-ring: rgba(230, 57, 57, 0.4);
                 }
             }
             
