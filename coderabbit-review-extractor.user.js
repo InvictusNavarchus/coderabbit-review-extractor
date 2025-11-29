@@ -857,7 +857,7 @@
         if (selectedComponents.length > 0) {
             clipboardText += `# CodeRabbit PR Review Analysis\n\n`;
             clipboardText += `**Components included:** ${selectedComponents.join(', ')}\n`;
-            clipboardText += `**Main suggestions:** ${mainSuggestions.length} | **Nitpicks:** ${options.includeNitpicks ? nitpickComments.length : 0}\n\n---\n\n`;
+            clipboardText += `**Main suggestions:** ${options.includeMain ? mainSuggestions.length : 0} | **Nitpicks:** ${options.includeNitpicks ? nitpickComments.length : 0}\n\n---\n\n`;
         }
 
         // Helper function to build a single review's text
@@ -893,7 +893,7 @@
         };
 
         // Process main suggestions
-        if (mainSuggestions.length > 0 && (options.includeCategory || options.includeReviewText || options.includeCodeDiff || options.includeCommittable || options.includeAiPrompt || options.includeTools)) {
+        if (options.includeMain && mainSuggestions.length > 0 && (options.includeCategory || options.includeReviewText || options.includeCodeDiff || options.includeCommittable || options.includeAiPrompt || options.includeTools)) {
             clipboardText += `## 🚀 Main Suggestions\n\n`;
             mainSuggestions.forEach((review, i) => {
                 clipboardText += buildReviewText(review, i, 'Suggestion');
@@ -1157,6 +1157,11 @@
                         </h3>
                         <div class="cr-options-list" role="group" aria-label="Source selection options">
                             <label class="cr-toggle">
+                                <input type="checkbox" id="cr-opt-main" checked>
+                                <span class="switch" aria-hidden="true"></span>
+                                <span class="cr-toggle-label">Include Main Suggestions</span>
+                            </label>
+                            <label class="cr-toggle">
                                 <input type="checkbox" id="cr-opt-nitpicks">
                                 <span class="switch" aria-hidden="true"></span>
                                 <span class="cr-toggle-label">Include Nitpick Comments</span>
@@ -1190,6 +1195,7 @@
             committable: overlay.querySelector('#cr-opt-committable'),
             aiPrompt: overlay.querySelector('#cr-opt-ai-prompt'),
             tools: overlay.querySelector('#cr-opt-tools'),
+            main: overlay.querySelector('#cr-opt-main'),
             nitpicks: overlay.querySelector('#cr-opt-nitpicks'),
         };
         
@@ -1205,13 +1211,14 @@
                         Object.values(checkboxes).forEach(cb => cb.checked = false);
                         break;
                     case 'essential':
-                        // Essential: category, review text, AI prompt
+                        // Essential: category, review text, AI prompt, main suggestions
                         checkboxes.category.checked = true;
                         checkboxes.reviewText.checked = true;
                         checkboxes.codeDiff.checked = false;
                         checkboxes.committable.checked = false;
                         checkboxes.aiPrompt.checked = true;
                         checkboxes.tools.checked = false;
+                        checkboxes.main.checked = true;
                         checkboxes.nitpicks.checked = false;
                         break;
                 }
@@ -1230,6 +1237,7 @@
                 includeCommittable: checkboxes.committable.checked,
                 includeAiPrompt: checkboxes.aiPrompt.checked,
                 includeTools: checkboxes.tools.checked,
+                includeMain: checkboxes.main.checked,
                 includeNitpicks: checkboxes.nitpicks.checked,
             };
             
