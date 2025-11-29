@@ -335,60 +335,67 @@
                 line-height: var(--cr-line-height-tight);
             }
             
-            /* Stats Grid */
-            .cr-stats-grid {
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            /* Stats Bar - Single Row Layout */
+            .cr-stats-bar {
+                display: flex;
+                flex-wrap: wrap;
+                align-items: center;
                 gap: var(--cr-space-3);
-                margin-bottom: var(--cr-space-6);
-            }
-            
-            .cr-stat-item {
+                padding: var(--cr-space-3) var(--cr-space-4);
                 background-color: var(--cr-bg-light);
-                padding: var(--cr-space-4);
                 border-radius: var(--cr-radius-md);
                 border: 1px solid var(--cr-border);
-                transition: border-color var(--cr-transition-fast);
+                margin-bottom: var(--cr-space-6);
+                font-size: var(--cr-font-size-sm);
             }
             
-            .cr-stat-item:hover {
-                border-color: var(--cr-border-focus);
-            }
-            
-            .cr-stat-item-title {
-                font-size: var(--cr-font-size-xs);
+            .cr-stat-chip {
+                display: inline-flex;
+                align-items: center;
+                gap: var(--cr-space-2);
                 color: var(--cr-text-muted);
-                margin-bottom: var(--cr-space-2);
-                text-transform: uppercase;
-                letter-spacing: 0.025em;
-                font-weight: 500;
             }
             
-            .cr-stat-item-value {
-                font-size: var(--cr-font-size-xl);
+            .cr-stat-chip-value {
                 font-weight: 700;
                 color: var(--cr-text);
-                line-height: var(--cr-line-height-tight);
             }
             
-            .cr-stat-category-list {
-                list-style: none;
-                padding: 0;
-                margin: 0;
-                font-size: var(--cr-font-size-xs);
+            .cr-stat-chip-label {
+                color: var(--cr-text-muted);
             }
             
-            .cr-stat-category-list li {
-                display: flex;
-                justify-content: space-between;
-                padding: var(--cr-space-1) 0;
+            .cr-stats-divider {
+                width: 1px;
+                height: 1.25rem;
+                background-color: var(--cr-border);
+            }
+            
+            .cr-stat-categories {
+                display: inline-flex;
+                align-items: center;
                 gap: var(--cr-space-2);
+                flex-wrap: wrap;
             }
             
-            .cr-stat-category-list li span {
+            .cr-category-tag {
+                display: inline-flex;
+                align-items: center;
+                gap: var(--cr-space-1);
+                padding: var(--cr-space-1) var(--cr-space-2);
+                background-color: var(--cr-bg-hover);
+                border-radius: var(--cr-radius-sm);
+                font-size: var(--cr-font-size-xs);
+                color: var(--cr-text-muted);
+                white-space: nowrap;
+                max-width: 150px;
                 overflow: hidden;
                 text-overflow: ellipsis;
-                white-space: nowrap;
+            }
+            
+            .cr-category-tag-count {
+                font-weight: 600;
+                color: var(--cr-text);
             }
             
             /* Options List */
@@ -1090,17 +1097,13 @@
     }
     
     function createPopup(stats, reviews) {
-        // Build category stats HTML
-        let categoryStatsHTML = '';
+        // Build category tags HTML
+        let categoryTagsHTML = '';
         const categoryEntries = Object.entries(stats.main.categories);
         if (categoryEntries.length > 0) {
-            categoryStatsHTML = '<ul class="cr-stat-category-list" role="list">';
-            for (const [key, value] of categoryEntries) {
-                categoryStatsHTML += `<li><span>${escapeHtml(key)}</span> <strong>${value}</strong></li>`;
-            }
-            categoryStatsHTML += '</ul>';
-        } else {
-            categoryStatsHTML = '<span style="color: var(--cr-text-muted)">None found</span>';
+            categoryTagsHTML = categoryEntries.map(([key, value]) => 
+                `<span class="cr-category-tag" title="${escapeHtml(key)}"><span class="cr-category-tag-count">${value}</span> ${escapeHtml(key)}</span>`
+            ).join('');
         }
         
         const content = `
@@ -1123,27 +1126,30 @@
                         <h3 id="cr-stats-heading" class="cr-section-title">
                             <span aria-hidden="true">📊</span> Statistics
                         </h3>
-                        <div class="cr-stats-grid" role="group" aria-label="Review statistics">
-                            <div class="cr-stat-item">
-                                <div class="cr-stat-item-title">Main Suggestions</div>
-                                <div class="cr-stat-item-value" aria-label="${stats.main.total} main suggestions">${stats.main.total}</div>
-                            </div>
-                            <div class="cr-stat-item">
-                                <div class="cr-stat-item-title">Nitpick Comments</div>
-                                <div class="cr-stat-item-value" aria-label="${stats.nitpicks.total} nitpick comments">${stats.nitpicks.total}</div>
-                            </div>
-                            <div class="cr-stat-item">
-                                <div class="cr-stat-item-title">With AI Prompts</div>
-                                <div class="cr-stat-item-value" aria-label="${stats.main.withPrompt} with AI prompts">${stats.main.withPrompt}</div>
-                            </div>
-                            <div class="cr-stat-item">
-                                <div class="cr-stat-item-title">With Tools</div>
-                                <div class="cr-stat-item-value" aria-label="${stats.main.withTools} with tools">${stats.main.withTools}</div>
-                            </div>
-                            <div class="cr-stat-item">
-                                <div class="cr-stat-item-title">Categories</div>
-                                ${categoryStatsHTML}
-                            </div>
+                        <div class="cr-stats-bar" role="group" aria-label="Review statistics">
+                            <span class="cr-stat-chip">
+                                <span class="cr-stat-chip-value" aria-label="${stats.main.total} main suggestions">${stats.main.total}</span>
+                                <span class="cr-stat-chip-label">Main</span>
+                            </span>
+                            <span class="cr-stats-divider" aria-hidden="true"></span>
+                            <span class="cr-stat-chip">
+                                <span class="cr-stat-chip-value" aria-label="${stats.nitpicks.total} nitpicks">${stats.nitpicks.total}</span>
+                                <span class="cr-stat-chip-label">Nitpicks</span>
+                            </span>
+                            <span class="cr-stats-divider" aria-hidden="true"></span>
+                            <span class="cr-stat-chip">
+                                <span class="cr-stat-chip-value">${stats.main.withPrompt}</span>
+                                <span class="cr-stat-chip-label">AI Prompts</span>
+                            </span>
+                            <span class="cr-stats-divider" aria-hidden="true"></span>
+                            <span class="cr-stat-chip">
+                                <span class="cr-stat-chip-value">${stats.main.withTools}</span>
+                                <span class="cr-stat-chip-label">Tools</span>
+                            </span>
+                            ${categoryEntries.length > 0 ? `
+                            <span class="cr-stats-divider" aria-hidden="true"></span>
+                            <span class="cr-stat-categories">${categoryTagsHTML}</span>
+                            ` : ''}
                         </div>
                     </section>
                     
