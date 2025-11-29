@@ -7,6 +7,8 @@
 // @match        https://github.com/*/*/pull/*
 // @grant        GM_addStyle
 // @grant        GM_setClipboard
+// @grant        GM_getValue
+// @grant        GM_setValue
 // @run-at       document-end
 // @icon         https://coderabbit.ai/logo-192.png
 // ==/UserScript==
@@ -17,6 +19,39 @@
     // --- UTILITIES ---
     const SCRIPT_NAME = 'CodeRabbit Extractor';
     const SCRIPT_EMOJI = '🐰';
+    
+    // --- PREFERENCES ---
+    const PREFS_KEY = 'cr_extractor_prefs';
+    const DEFAULT_PREFS = {
+        includeCategory: true,
+        includeReviewText: true,
+        includeCodeDiff: true,
+        includeCommittable: false,
+        includeAiPrompt: true,
+        includeTools: false,
+        includeMain: true,
+        includeNitpicks: false,
+    };
+    
+    function loadPreferences() {
+        try {
+            const saved = GM_getValue(PREFS_KEY, null);
+            if (saved) {
+                return { ...DEFAULT_PREFS, ...JSON.parse(saved) };
+            }
+        } catch (e) {
+            console.warn(getPrefix(), 'Failed to load preferences:', e);
+        }
+        return { ...DEFAULT_PREFS };
+    }
+    
+    function savePreferences(prefs) {
+        try {
+            GM_setValue(PREFS_KEY, JSON.stringify(prefs));
+        } catch (e) {
+            console.warn(getPrefix(), 'Failed to save preferences:', e);
+        }
+    }
 
     function getPrefix() {
         const now = new Date();
@@ -1199,6 +1234,34 @@
             nitpicks: overlay.querySelector('#cr-opt-nitpicks'),
         };
         
+        // Load saved preferences and apply to checkboxes
+        const savedPrefs = loadPreferences();
+        checkboxes.category.checked = savedPrefs.includeCategory;
+        checkboxes.reviewText.checked = savedPrefs.includeReviewText;
+        checkboxes.codeDiff.checked = savedPrefs.includeCodeDiff;
+        checkboxes.committable.checked = savedPrefs.includeCommittable;
+        checkboxes.aiPrompt.checked = savedPrefs.includeAiPrompt;
+        checkboxes.tools.checked = savedPrefs.includeTools;
+        checkboxes.main.checked = savedPrefs.includeMain;
+        checkboxes.nitpicks.checked = savedPrefs.includeNitpicks;
+        
+        // Helper to get current preferences from checkboxes
+        const getCurrentPrefs = () => ({
+            includeCategory: checkboxes.category.checked,
+            includeReviewText: checkboxes.reviewText.checked,
+            includeCodeDiff: checkboxes.codeDiff.checked,
+            includeCommittable: checkboxes.committable.checked,
+            includeAiPrompt: checkboxes.aiPrompt.checked,
+            includeTools: checkboxes.tools.checked,
+            includeMain: checkboxes.main.checked,
+            includeNitpicks: checkboxes.nitpicks.checked,
+        });
+        
+        // Save preferences whenever a checkbox changes
+        Object.values(checkboxes).forEach(cb => {
+            cb.addEventListener('change', () => savePreferences(getCurrentPrefs()));
+        });
+        
         presetButtons.forEach(btn => {
             btn.addEventListener('click', () => {
                 const preset = btn.dataset.preset;
@@ -1222,6 +1285,9 @@
                         checkboxes.nitpicks.checked = false;
                         break;
                 }
+                
+                // Save preferences after preset is applied
+                savePreferences(getCurrentPrefs());
             });
         });
         
@@ -1230,16 +1296,7 @@
         const copyBtnText = copyBtn.querySelector('.cr-copy-btn-text');
         
         copyBtn.addEventListener('click', () => {
-            const options = {
-                includeCategory: checkboxes.category.checked,
-                includeReviewText: checkboxes.reviewText.checked,
-                includeCodeDiff: checkboxes.codeDiff.checked,
-                includeCommittable: checkboxes.committable.checked,
-                includeAiPrompt: checkboxes.aiPrompt.checked,
-                includeTools: checkboxes.tools.checked,
-                includeMain: checkboxes.main.checked,
-                includeNitpicks: checkboxes.nitpicks.checked,
-            };
+            const options = getCurrentPrefs();
             
             const textToCopy = generateCopyText(options, reviews);
             GM_setClipboard(textToCopy);
